@@ -6,6 +6,8 @@
 
 https://www.jianshu.com/p/49acf1246eff
 
+https://blog.csdn.net/ruanjian1111ban/article/details/80890539
+
 通常我们使用的比较多的结构都是父子结构的工程。下面是列举出来的一些最佳实践：
 
 #####利用properties来消除版本的重复：
@@ -105,3 +107,6 @@ https://www.jianshu.com/p/49acf1246eff
 
 
 
+##### maven多module项目的引用
+
+多module项目一般都有一个父亲工程，父亲工程通过dependencyManagement来管理依赖，我们可以在父亲pom中通过添加子模块的依赖。然后在子模块的pom中指定依赖就可以。但是这样可能造成一个问题，就是如果我想引用整个项目的时候，直接指定父亲依赖会下不到子依赖的包，因为在父亲依赖中是用dependencyManagement来进行依赖配置的。导致找不到依赖。这个时候可以选在父亲模块中再建立一个pom专门用于子类的引用。
