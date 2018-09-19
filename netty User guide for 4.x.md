@@ -1,20 +1,504 @@
 ### netty User guide for 4.x
 
-前言：
+#####前言：
 
-问题：通常我们会用通用的程序或者库来进行网络传输，比如，我们经常用http库来从web server上获取信息，或者通过web services进行远程调用。但是，一个通用的协议和实现往往不能适应所有的需求。比如我们不会用http协议去请求大文件，email消息或者进行实时消息比如金融交易和游戏数据传输，在这些场景下我们需要的是一个高度定制化的协议实现。比如，我们可能会想实现一个特殊的http server，专门为采用ajax传输的聊天程序，或者媒体流，或者大文件传输进行优化。也可能我们会需要专门实现一种协议来满足我们的需求。还有一种不可避免的情况就是你必须和某些使用老协议的系统进行交互，在这种情况下，能很快的实现这种协议来和老系统进行对接又不影响程序的稳定性和易用性是关键。
+问题：通常我们会用通用的程序或者库来进行网络传输，比如我们用http库来从web server上获取信息，或者通过web services进行远程调用。但是，一个通用的协议实现往往不能适应所有的场景。比如我们不会用http协议去请求大文件，发送email消息或者进行像金融交易和游戏数据传输这样的实时消息传输，在这些场景下我们一般需要的是一个高度定制化的协议实现。比如我们可能会实现一个特殊的http server，针对不同的场景来进行优化，比如基于ajax请求的聊天程序，或者流媒体，或者大文件传输。也可能我们会需要专门实现一种协议来满足我们的需求。还有一种不可避免的情况就是你必须和某些使用老协议的系统进行交互，在这种情况下，能很快的实现这种协议来和老系统进行对接很重要，同时还不能影响程序的稳定性和易用性。
 
 
 
-解决方案：
+#####解决方案：
 
-netty尝试提供一个异步时间驱动的网络开发框架，用于开发高性能高可靠的网络程序。实际上netty是一个nio的框架来帮助我们进行快速的开发，它极大的降低了我们开发tcp和udp程序等网络程序的成本。
+netty尝试提供一个异步事件驱动的网络开发框架，用于开发高性能高可靠的网络程序。
 
-netty能快速和简单的开发网络应用程序，同时还能保证程序可维护和高性能。netty从很多不同的协议实现中汲取经验，比如ftp，smtp，http等协议。netty将开发友好性，性能，稳定性和灵活性都统一了起来。
+实际上netty是一个NIO的开发框架，可以用来帮助我们快速开发基于NIO的网络应用程序，它极大的降低了我们开发tcp和udp程序等网络程序的成本。
+
+netty能快速和简单的开发网络应用程序，同时还能保证程序可维护性和高性能。netty从很多不同的协议实现中汲取经验，比如ftp，smtp，http等协议。netty将开发友好性，性能，稳定性和灵活性都统一了起来。
 
 netty相对于其他的网络程序开发框架有什么优势呢？答案是netty是从设计之初就将使用体验放在第一位，包括提供的API和实现。这可能不能很直观的感受出来，但是随着不断的使用netty，你会明白netty的使用简单友好。
 
 
 
-开始吧：
+#####开始吧：
 
+需要准备netty最新版本和jdk 1.6以上的版本
+
+
+
+##### 编写一个discard server
+
+最简单的协议不是hello world，而是DICARD，这是一种对任何收到的消息都不进行返回的协议。
+
+```java
+package io.netty.example.discard;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+
+public class DiscardServerHandler extends ChannelInboundHandlerAdapter{//1
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg){//2
+        //Discard the received data silently.
+        ((ByteBuf)msg).release();//3
+    }
+    
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause){//4
+        //Close the connection when an exception is raised
+        casue.printStackTrace();
+        ctx.close();
+    }
+}
+```
+
+1. DiscardServerHandler扩展了ChannelInboundHandlerAdapter，ChannelInboundHandlerAdapter是接口ChannelInboundHanlder的一个实现，为我们提供了很多默认的事件处理方法，我们可以直接进行重写。这样我们就不用直接实现ChannelInboundHandler接口了
+
+2. 我们重写了channelRead这个事件处理方法，这个方法在收到了消息的时候被调用，在这个例子中，收到的消息是ByteBuf
+
+3. 要实现DISCARD这个协议，这个处理方法直接忽略掉收到的消息。ByteBuf是一个引用计数的object，所以需要通过released方法来显示的进行释放。所以一定要牢记在handler中进行引用计数的递减，所以一般channelRead方法的实现如下
+
+   ```
+   @Override
+   public void channelRead(ChannelHandlerContext ctx, Object msg){
+       try{
+           //do something with msg
+       }finally{
+           ReferenceCountUtil.release(msg);
+       }
+   }
+   ```
+
+4. exceptionCaught这个事件处理方法在出现异常的时候被调用，一般异常会有io异常或者某个handler的实现异常。在大部分情况下，捕获到的异常需要被记录到log，并且和他关联的channel应该关闭掉。或者根据业务需求发送自定义的response，比如发送一个errorcode
+
+我们通过上面的handler实现了DICARD实现，现在剩下的就是编写main方法来启动一个server了。
+
+```java
+package op.netty.example.discard;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+
+public class DiscardServer{
+    
+    private int port;
+    
+    public DiscardServer(int port){
+     	this.port = port;   
+    }
+    
+    public void run() throws Exception{
+        EventLoopGroup bossGroup = new NioEventLoopGroup();//1
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        try{
+            ServerBootstrap b = new ServerBootstrap();//2
+            b.group(bossGroup, workerGroup)
+                .channel(NioServerSokcetChannel.class)//3
+                .childHanlder(new ChannelInitializer<SocketChannel>(){//4
+                    @Override
+                    public void initChannel(SocketChannel ch) throws Exception{
+                        ch.pipeline().addLast(new DiscardServerHandler());
+                    }
+                })
+                .option(ChannelOption.SO_BACKLOG, 128) //5
+                .childOption(ChannelOption.SO_KEEPALIVE, true) //6
+                
+                //bind and tstart to accept incoming connections;
+                ChannelFuture f = b.bind(port).sync();//7
+            	//wait until the server socket is closed
+           		//in this example, this does not happern, but you can do that to
+            	//gracefuuy shut down your server
+            	f.channe().closeFuture().sync();
+        }finally{
+            workerGroup.shutdownGracefully();
+            bossGroup.shutdownGracefully();
+        }
+    }
+    
+    public static void main(String[] args) throws Exception{
+   		int port;
+        if(args.length > 0){
+            port = Integer.parseInt(args[0]);
+        }else{
+            port = 8080;
+        }
+        new DiscardServer(port).run();
+    }
+}
+```
+
+1. NioEventLoopGroup是一个多线程的时间循环处理器。netty提供了很多种的EventLoopGroup的实现。由于我们实现的是一个服务器程序，所以需要两个NioEventLoopGroup。第一个叫boss，用于接受进来的连接请求。第二个叫worker，用于处理建立起来的连接上的事件（当一个boss接受到的新的连接后，会将这个建立起来的连接注册到worker上，这样worker就可以处理这些连接上的事件）。具体worker采用多少个线程以及建立的连接如何绑定到对应的线程上都是我们自己可以控制的，netty提供了默认实现。
+2. ServerBootstrap是一个辅助类，用来帮我们启动一个server。当然我们也可以选择自己用最底层的channel来启动一个server，但是这是一个重复乏味的过程，所以netty为我们提供了boostrap的类来帮助我们。
+3. 我们采用NioServerSocketChannel来接收进来的连接请求。
+4. 这里指定的这个handler会在新接收到一个连接的时候执行。channelInitializer是一个特殊的handler，它主要用来对新进来的连接进行初始化。
+5. 我们可以设置channel的参数。我们采用的底层传输协议是tcp，所以我们可以设置类似tcpdelay，keepalive等参数。可以去channelConfig和channelOption查看支持的参数。
+6. option是用来配置NioServerSocketChannel的，childOption是用来配置产生的NioServerSocketChannel的。
+7. 基本上实例都初始化完毕了，现在剩下的就是绑定端口和启动server了。我们将绑定8080端口。
+
+恭喜，我们使用netty搭建完成了第一个server
+
+
+
+##### 观察一下收到的数据
+
+我们已经完成了第一个server，我们需要测试是否正常。我们可以采用telnet命令，比如你可以用telnet localhost 8080 来测试server。
+
+但是，由于我们采用的是discard协议，所以并没有什么返回。所以我们可以修改一下server，让server打印出来收到的数据
+
+```java
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg){
+    ByteBuf in = (ByteBuf)msg;
+    try{
+        while(in.isReadable()){//1
+            System.out.print((char)in.readByte());
+            System.out.flush();
+        }
+    }finally{
+        ReferenceCountUtil.release(msg);//2
+    }
+}
+```
+
+1. 这个循环可以简化成 System.out.println(in.toString(io.netty.util.CharsetUtil.US_ASCII))
+2. 还可以使用 in.release();
+
+再次运行telnet命令，就可以看到输出了。
+
+
+
+### 编写一个回显的server
+
+上面的例子都没有返回。但是实际应用中，一个server都是会返回response的，让我们实现一个ECHO协议，也就是把收到的数据返回给客户端。
+
+和上面DISCARD的区别是它将收到的消息发回给客户端。如下：
+
+```java
+@Override
+public void channelRead(ChannelHandlerContext ctn, Object msg){
+    ctx.write(msg);//1
+    ctx.flush();//2
+}
+```
+
+1. 一个ChannelHandlerContext对象提供了很多可以触发io的方法，比如这里调用的write方法。这里注意到我们没有显示的调用release方法，这是因为我们调用write方法后netty自动的帮助我们做了。
+2. 调用write方法并没有将数据真正的进行发送，它在内部进行缓存，然后调用flush方法的时候才真正的写入到网络中。
+
+
+
+### 编写一个时间服务器
+
+协议具体的细节是，当一个客户端连接上server的时候，server会返回一个32位的整数代表一个时间。然后关闭掉连接。
+
+因为我们并不需要获取到数据后再发送时间，所以我们不能使用channelRead方法，我们应该采用channelActive方法。
+
+```java
+package io.netty.example.time
+
+public class TimeServerHandler extends ChannelInboundHandlerAdapter{
+    
+    @Override
+    public void channelActive(final ChannelHandlerContext ctx){//1
+    	final ByteBuf time = ctx.alloc().buff(4);//2
+    	time.wirteInt((int)(System.currentTImeMillis()/1000L + 2208988800L));
+    	
+    	final ChannelFuture f = ctx.writeAndFlush(time);//3
+        f.addListenner(new ChannelFutureListenner(){
+        	@Override
+            public void operationComplete(ChannelFuture future){
+            	assert f == future;
+            	ctx.close();
+            }
+        });//4
+    }
+    
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause){
+    	cause.printStackTrace();
+    	ctx.close();
+    }
+   
+}
+```
+
+1. channelActive方法会在连接建立并且可以处理事件之后进行调用。
+
+2. 为了发送数据，我们需要先分配一个新的buffer，由于我们是写入一个整数，所以需要申请4个字节。
+
+3. 我们写入数据，对于熟悉java nio的同学肯定知道需要调用bytebuff的flip方法。但是netty里面重写了这部分的内容，加入了写指针和读指针，这样我们就不用调用flip方法了。
+
+   我们调用writeAndFlush方法的时候会返回一个channelFuture对象。一个channelFuture代表一个还没有完成的io操作，在netty里面，io操作都是异步的。所以在我们的代码中，我们需要在写入成功之后关闭掉channel，那么我们应该在channelFuture的listener里面做。
+
+4. 我们需要把定义的listener增加到future里面，这样当future对应的io操作完成的时候就会通过listener通知到调用者。
+
+关键点是需要理解在netty中，操作都是异步的这个概念！
+
+
+
+### 编写一个时间协议的客户端
+
+前面都是写了服务端，现在我们需要些客户端。
+
+如下：
+
+```java
+package io.netty.example.time;
+
+public class TimeClient{
+    public static void main(String[] args){
+        String host = args[0];
+        int port  = Integer.parseInt(args[1]);
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        
+        try{
+            Bootstrap b = new Bootstrap();//1
+            b.group(workerGroup);//2
+            b.channel(NioSocketChannel.class);//3
+            b.option(ChannelOption.SO_KEEPALIVE, true);//4
+            b.handler(new ChannelInitializer<SocketChannel>(){
+                @Override
+                public void initChannel(SocketChannel ch) throws Exception {
+                    ch.pipeline().addLast(new TimeClientHandler());
+                }
+            });
+            
+            //start the client
+            ChannelFuture f = b.connect(host, port).sync();//5
+            //wait until the connection is closed;
+            f.channel.closeFuture().sync();
+        }
+    }
+}
+```
+
+1. bootstrap和ServerBootstrap类似。它是一个辅助类，主要用来帮助客户端进行启动。
+2. 如果只指定了一个EventLoopGroup，那么它将被用来当做bossGroup和workerGroup。但是在客户端这边bossGroup没有用到。
+3. 在客户端我们用NioSocketChannel
+4. 注意这里我们用的是option方法
+5. 调用connect方法
+
+可以看到。客户端的启动和服务端的启动比较类似。我们再看channelHandler的实现。
+
+```java
+package io.netty.example.time
+
+import java.util.Date
+
+public class TimeClientHandler extends ChannelInboundHandlerAdapter{
+	@Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg){
+    	ByteBuf m = (ByteBuf)msg;//1
+        try{
+        	long currentTimeMillis = (m.readUnsignedInt() - 2208988800L) * 1000L;
+        	System.out.println(new Date(currentTimeMillis));
+        	ctx.close();
+        }finally{
+        	m.release();
+        }
+    }
+	
+	@Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause){
+    	cause.printStackTrace();
+    	ctx.close();
+    }
+	
+}
+```
+
+
+
+### 处理流式传输层协议
+
+对于一个流式的传输协议，比如tcp/ip， 收到的数据被存储在一个socket的接收缓冲区中。这个buffer存储的是收到的字节。即使你发送了两个独立的数据包，但是在操作系统层面会把它们当成一串字节而已。所以，这就存在了粘包和半包的问题。
+
+解决方法：
+
+######累计buf
+
+我们看看时间这个例子。一个32位的整数是很小的数据，只有4个字节。不大可能被分包，也就是先收到2个字节，再收到2个字节。但是实际中，这是很可能被分片的，并且可能性随着流量的增加而增加。比较简单的做法是创建一个内部的缓冲buffer来存储收到的数据，直到收到了4个字节的数据再开始处理逻辑。
+
+```java
+package io.netty.example.time
+
+import java.util.Date;
+
+public class TimeClientHandler extends ChannelInBoundHandlerAdapter {
+    private ByteBuf buf;
+    
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx){
+        buf = ctx.alloc().buffer(4);//1
+    }
+    
+    @Override
+    public void handlerRemove(ChannelHandlerContext ctn){
+        buf.release();//1
+        buf = null;
+    }
+    
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg){
+        ByteBuf m = (ByteBuf)msg;
+        buf.writeBytes(m);//2
+        m.release();
+        
+        while (buf.readbleBytes() >= 4 ){
+            long currentTimeMillis = (buf.readUnsignedInt() - 2208988800L) * 1000L;
+            System.out.println(new Date(currentTimeMillis));
+            ctx.close();
+        }
+        
+    }
+    
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause){
+        cause.printStackTrace();
+        ctx.close();
+    }
+    
+}
+```
+
+1. channelHandler有几个声明周期方法，handlerAdded和handlerRemoved。在这里可以做一些初始化的工作，但是不能长时间阻塞
+2. 首先，将收到的数据都缓存到buf中去
+3. 然后检查是否可读字节大于4，如果大于的话就进行业务处理。
+
+
+
+##### 使用专门的decoder
+
+上面的解决方案中是把协议解码和解码后的业务逻辑混在了一起，所以在实践中，我们可以尝试把二者分开。
+
+一个TimeDecoder负责解决协议解码的问题。处理包括半包和粘包的逻辑。
+
+另外一部分就负责解决业务逻辑，和前面逻辑保持一致。
+
+netty对协议编码和解码的支持非常的好，如下：
+
+```java
+package io.netty.example.time;
+
+public class TimeDecoder extends ByteToMessageDecoder {//1
+    @Override
+    protected void decode(ChannelHandlderContext ctx, ByteBuf in, List<Object> out){//2
+        if(in.readableBytes() < 4){
+            return;//3
+        }
+        
+        out.add(in.readBytes(4));//4
+    }
+}
+```
+
+1. ByteToMessageDecoder是一个channelInboundHanlder的实现，用于解决分片的问题。
+2. ByteToMessageDecoder会调用decode方法，ByteToMessageDecoder内部维护了一个buffer，用于暂存收到的数据
+3. decode方法来判断是否往out这个list中添加对象，如果数据还没有读取完整就不添加，ByteToMessageDecoder将会继续调用decode方法当收到了更多的数据。
+4. 如果decode方法将读取的对象加入到了out这个list里面。说明decode方法读到了数据。ByteToMessageDecoder就会丢弃buffer中已经读取的部分，要注意的是 我们不用在decode方法里面decode多个对象。因为这个循环逻辑ByteToMessageDecoder已经帮助我们做了，它会一直循环，直到没有东西加入到out这个list里面。
+
+我们既然加入两个handler给这个channel的pipeline，所以我们需要修改ChannelInitializer，如下：
+
+```java
+b.handler(new ChannelInitializer<SocketChannel>{
+    @Override
+    public void initChannel(SocketChannel ch) throws Exception{
+        ch.pipeline().addLast(new TimeDecoder(), new TimeClientHandler());
+    }
+});
+```
+
+
+
+#####使用pojo代替bytebuf
+
+前面的例子中，我们都是使用bytebuf，在这节里面，我们使用一个POJO来代替ByteBuf来实现时间协议。
+
+
+
+用pojo的好处有很多，将协议的编解码和业务逻辑分开使得handler变得更加的可维护和可重用。如下我们创建一个结构
+
+```java
+package io.netty.example.time
+
+import java.util.Date;
+
+public class UnixTime{
+    private final long value;
+    
+    public UnixTime(long value){
+        this.value = value;
+    }
+}
+```
+
+我们下面修改TimeDecoder来产出一个UnixTime对象
+
+```java
+@Override
+protected void decode(ChannelHandlerContext ctn, ByteBuf in, List<Object> out){
+    if(in.readableBytes() < 4){
+        return;
+    }
+    
+    out.add(new UnitTime(in.readUnsignedInt()));
+}
+```
+
+在我们的clientTimeHandler中，就可以不使用bytebuf了。如下：
+
+```java
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg){
+    UnixTime m = (UnixTime)msg;
+    System.out.println(m);
+    ctx.close();
+}
+```
+
+这样实现的话，更简单并且更优雅，但是我们还缺少一部分内容，上面我们都是谈论解码过程，还需要编码过程。
+
+如下
+
+```java
+package io.netty.example.time;
+
+public class TimeEncoder extends ChannelOutboundHandlerAdapter {
+    @Override
+    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise){
+        UnixTime m = (UnitTime)msg;
+        ByteBuf encoded = ctx.alloc().buffer(4);
+        encoded.writeInt((int)m.value());
+        ctx.write(encoded, promise);//1
+    }
+}
+```
+
+1. 我们传递了promise给下层对象使用，这样我们能够得到通知
+2. 我们没有调用ctx.flush方法
+
+更简单的，我们可以使用MessageToByteEncoder方法，如下
+
+```java
+public class TimeEncoder extends MessageToByteEncoder<UnixTime>{
+    @Override
+    protected void encode(ChannelHandlerContext ctx, UnitTime msg, ByteBuf out){
+        out.writeInt((int)msg.value());
+    }
+}
+```
+
+
+
+##### 关闭程序
+
+关闭netty很简单。关闭对应的EventLoopGroup即可。
+
+
+
+##### 总结
+
+这是netty的入门教程，更多的例子可以参考netty里面的example。

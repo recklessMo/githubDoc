@@ -134,6 +134,41 @@ Object x = a.get(0);//ok
 
 
 
+##### netty中的泛型使用
+
+###### 比较有意思的地方就是netty的future和promise机制
+
+大量使用了泛型的思想，比如
+
+```java
+public interface GenericFutureListener<F extends Future<?>> extends EventListener {
+      void operationComplete(F future) throws Exception;
+}
+//这么写算是一个泛型嵌套，意思是Future里面可以是<？extends Object>类型，代表可以装任何对象。
+//同时Future还有很多子类，比如promise，F extends Future 代表，还可以使用Future的子类。
+
+//一个泛型嵌套，让这个泛型能够表示的范围更加的广
+```
+
+
+
+```java
+Future<V> addListeners(GenericFutureListener<? extends Future<? super V>>... listeners);
+
+//上面我们说到了GenericFutureListenner的定义很广，基本上包括了future的所有的种类。
+//但是针对指定的Future类型，比如Future<V>, 能够传给Future<V>的listener还是有一定的限制的。listener针对V的父类型进行响应都可以。
+```
+
+
+
+netty ConstantPool中使用的常量思想
+
+```java
+
+```
+
+
+
 
 
 
