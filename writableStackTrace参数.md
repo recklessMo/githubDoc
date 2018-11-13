@@ -41,7 +41,7 @@ java在编译的时候，会将所有的分支都加上一个finally块的routin
 
 
 
-https://www.ibm.com/developerworks/cn/java/j-lo-finally/index.html
+https://www.ibm.com/developerworks/cn/java/j-lo-finally/index.html 
 
 核心就是athrow指令。return和throw指令。都是一种控制转义的指令。
 
