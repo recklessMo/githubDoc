@@ -2,7 +2,21 @@
 
 
 
-插播一个问题spring
+插播一个问题，在使用spring transactional注解的时候的问题；
+
+1. 在private final方法上加注解。
+2. 通过类的A方法来调用B方法,B的注解不生效
+3. 有时候一个基类会有几个子类，在初始化的时候进行put this到map。这个时候的this可能就不是生成的代理对象，而是一个普通的对象。
+
+
+
+所以核心内容是 spring如何处理transactional标签。
+
+
+
+
+
+
 
 
 
